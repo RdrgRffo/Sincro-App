@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  backend-lint:
+    name: Backend Lint & TypeCheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm run lint
+
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: test_pass
+          MYSQL_DATABASE: sincro_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -ptest_pass"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: mysql://root:test_pass@localhost:3306/sincro_test
+      - run: npm test -- --ci --runInBand
+        env:
+          DATABASE_URL: mysql://root:test_pass@localhost:3306/sincro_test
+          JWT_SECRET: test_jwt_secret_key_12345678
+          JWT_REFRESH_SECRET: test_refresh_secret_key_12345678
+          NODE_ENV: test
+
+  frontend-lint:
+    name: Frontend Lint & TypeCheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ./frontend/package-lock.json
+      - run: npm ci
+      - run: npm run test -- --maxWorkers=2 --testTimeout=15000
+
+  docker-build:
+    name: Docker Build Check
+    needs: [backend-test, frontend-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.yml build --no-cache
+
+  backend-smoke-tests:
+    name: Backend Smoke Tests (Postman)
+    needs: [docker-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create backend .env for CI
+        run: |
+          cat > backend/.env << 'EOF'
+          DATABASE_URL="mysql://root:root_pass@db:3306/sincro_db"
+          JWT_SECRET="ci-jwt-secret-for-smoke-tests-1234567890"
+          JWT_REFRESH_SECRET="ci-refresh-secret-for-smoke-tests-0987654321"
+          ACCESS_TOKEN_EXPIRY="15m"
+          REFRESH_TOKEN_EXPIRY="7d"
+          PORT=3001
+          NODE_ENV="development"
+          CORS_ORIGIN="http://localhost:15173"
+          EOF
+      - run: docker compose -f docker-compose.yml up -d
+      - name: Wait for backend health
+        run: |
+          echo "Waiting for backend to be healthy..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:13001/api/health > /dev/null 2>&1; then
+              echo "Backend is healthy!"
+              break
+            fi
+            echo "Attempt $i/60 - backend not ready yet..."
+            sleep 5
+          done
+          curl -sf http://localhost:13001/api/health || (echo "Backend failed to become healthy" && exit 1)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install Newman
+        run: npm install -g newman
+      - name: Run Postman Smoke Tests
+        run: |
+          newman run test/Sincro.API.Deployment.postman_collection.json \
+            -e test/Sincro.local.postman_environment.json \
+            --env-var "baseUrl=http://localhost:13001" \
+            --bail
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.yml down -v
