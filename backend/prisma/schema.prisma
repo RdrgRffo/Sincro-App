@@ -1,0 +1,586 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String   @id @default(cuid())
+  name                    String
+  email                   String
+  derivedUsername         String   @map("derived_username")
+  isActive                Boolean  @default(true) @map("is_active")
+  passwordHash            String   @map("password_hash")
+  passwordChangedAt       DateTime @default(now()) @map("password_changed_at")
+  roleId                  String?  @map("role_id")
+  role                    Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  status                  String   @default("active")
+  avatarUrl               String?  @map("avatar_url")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+  lastLoginAt             DateTime? @map("last_login")
+  failedAttempts          Int      @default(0) @map("failed_attempts")
+  lockedUntil             DateTime? @map("locked_until")
+  forcePasswordChange     Boolean  @default(false) @map("force_password_change")
+  passwordChangePolicy    String   @default("none") @map("password_change_policy")
+  passwordChangeWarnedAt  DateTime? @map("password_change_warned_at")
+  passwordChangeDeadlineAt DateTime? @map("password_change_deadline_at")
+  tokenVersion            Int      @default(0) @map("token_version")
+  employeeId              String?  @unique @map("employee_id")
+  companyPhone            String?  @map("company_phone")
+  auxiliaryPhone          String?  @map("auxiliary_phone")
+  branchId                String?  @map("branch_id")
+  branch                  Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId            String?  @map("department_id")
+  department              Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  refreshTokens        RefreshToken[]
+  createdSchedules     Schedule[]           @relation("ScheduleCreator")
+  scheduleAssignments  ScheduleAssignment[]
+  absences             Absence[]            @relation("AbsenceEmployee")
+  reviewedAbsences     Absence[]            @relation("AbsenceReviewer")
+  weeklyWorkSummaries  WeeklyWorkSummary[]
+  auditLogs            AuditLog[]           @relation("AuditActor")
+  rolledBackAuditLogs  AuditLog[]           @relation("AuditRollbackActor")
+  notificationsSent    NotificationLog[]    @relation("NotificationSender")
+  managedBranches      Branch[]             @relation("BranchManager")
+  managedDepartments   DepartmentManager[]
+  skills               UserSkill[]          @relation("UserSkills")
+  assignedSkills       UserSkill[]          @relation("SkillAssigner")
+  notificationPreference UserNotificationPreference?
+  entityComments       EntityComment[]
+  visibleBranches      UserVisibleBranch[]
+  inAppNotifications   InAppNotification[]
+
+  // -- ÍNDICES --
+  // branchId: para JOIN con Branch y filtros por sede
+  @@index([branchId])
+  // status + roleId: listado de usuarios con filtros combinados (muy frecuente en UsersPage)
+  @@index([status, roleId])
+  // roleId: búsquedas solo por rol
+  @@index([roleId])
+  // status: búsquedas solo por estado (activos, bloqueados...)
+  @@index([status])
+  // isActive: filtrar usuarios activos/inactivos
+  @@index([isActive])
+  // Unicidad condicional: email único solo entre usuarios activos
+  @@unique([email, isActive])
+  // Unicidad condicional: derivedUsername único solo entre usuarios activos
+  @@unique([derivedUsername, isActive])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  permissions Permission[]
+  users       User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles Role[]
+
+  @@map("permissions")
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String?
+  color       String   @default("#1d4ed8")
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users UserSkill[]
+
+  @@index([isActive])
+  @@index([category])
+  @@map("skills")
+}
+
+model UserSkill {
+  userId       String   @map("user_id")
+  skillId      String   @map("skill_id")
+  assignedById String?  @map("assigned_by")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+  level        String?
+  expiresAt    DateTime? @map("expires_at")
+  notes        String?  @db.Text
+  user         User     @relation("UserSkills", fields: [userId], references: [id], onDelete: Cascade)
+  skill        Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  assignedBy   User?    @relation("SkillAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, skillId])
+  @@index([skillId])
+  @@index([assignedById])
+  @@map("user_skills")
+}
+
+model UserNotificationPreference {
+  userId                     String   @id @map("user_id")
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleChanges            Boolean  @default(true) @map("schedule_changes")
+  absenceUpdates            Boolean  @default(true) @map("absence_updates")
+  departmentAbsenceRequests Boolean  @default(true) @map("department_absence_requests")
+  dailySummary               Boolean  @default(false) @map("daily_summary")
+  weeklySummary              Boolean  @default(true) @map("weekly_summary")
+  criticalAlertsOnly         Boolean  @default(false) @map("critical_alerts_only")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  @@map("user_notification_preferences")
+}
+
+model EntityComment {
+  id         String   @id @default(cuid())
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  authorId   String   @map("author_id")
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body       String   @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([authorId])
+  @@map("entity_comments")
+}
+
+model EmployeeIdSequence {
+  id         String   @id
+  lastNumber Int      @default(0) @map("last_number")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("employee_id_sequences")
+}
+
+model Branch {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  address     String?
+  city        String?
+  region      String?
+  countryCode String   @default("ES") @map("country_code")
+  timezone    String   @default("Europe/Madrid")
+  isActive    Boolean  @default(true) @map("is_active")
+  managerId   String?  @map("manager_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users              User[]
+  manager            User?     @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  schedules          Schedule[]
+  holidays           BranchHoliday[]
+  webhooks           WebhookConfig[]
+  departmentBranches  DepartmentBranch[]
+  absences             Absence[] @relation("BranchAbsences")
+  visibleUsers       UserVisibleBranch[]
+
+  // -- ÍNDICES --
+  // isActive: listBranches filtra por activas constantemente
+  @@index([isActive])
+  // managerId: búsquedas de sucursales por manager
+  @@index([managerId])
+  @@map("branches")
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  managers         DepartmentManager[]
+  webhooks         WebhookConfig[]
+  branches         DepartmentBranch[]
+  users            User[]
+  absences         Absence[] @relation("DepartmentAbsences")
+  schedules        Schedule[]
+
+  @@index([isActive])
+  @@index([code])
+
+  @@map("departments")
+}
+
+model DepartmentBranch {
+  departmentId String     @map("department_id")
+  branchId     String     @map("branch_id")
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  branch       Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@id([departmentId, branchId])
+  @@index([branchId])
+  @@map("department_branches")
+}
+
+model DepartmentManager {
+  departmentId String     @map("department_id")
+  userId       String     @map("user_id")
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime   @default(now()) @map("assigned_at")
+
+  @@id([departmentId, userId])
+  @@index([userId])
+  @@map("department_managers")
+}
+
+model UserVisibleBranch {
+  userId     String   @map("user_id")
+  branchId   String   @map("branch_id")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch     Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@id([userId, branchId])
+  @@index([branchId])
+  @@map("user_visible_branches")
+}
+
+enum HolidayType {
+  nacional
+  autonomica
+  local
+  mejora
+  regional
+  company
+}
+
+model BranchHoliday {
+  id           String      @id @default(cuid())
+  branchId     String      @map("branch_id")
+  branch       Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  date         DateTime
+  originalDate DateTime?   @map("original_date")
+  name         String
+  type         HolidayType @default(local)
+  scope        String      @default("local")
+  isPartial    Boolean     @default(false) @map("is_partial")
+  isActive     Boolean     @default(true) @map("is_active")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  // Unicidad: no puede haber dos festivos con mismo nombre en la misma sede y fecha
+  @@unique([branchId, date, name])
+  // -- ÍNDICES --
+  // (branchId, date): consulta principal — festivos de una sede en un rango de fechas
+  @@index([branchId, date])
+  // (branchId, isActive): filtrar festivos activos de una sede
+  @@index([branchId, isActive])
+  @@map("branch_holidays")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  token     String    @unique @db.VarChar(768)
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+
+  // -- ÍNDICES --
+  // userId: revocar todos los tokens de un usuario en logout / account actions
+  @@index([userId])
+  // expiresAt: limpiar tokens expirados en jobs de mantenimiento
+  @@index([expiresAt])
+  // (userId, revokedAt): buscar tokens activos de un usuario (revokedAt IS NULL)
+  @@index([userId, revokedAt])
+  @@map("refresh_tokens")
+}
+
+model Schedule {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?  @db.Text
+  startDatetime DateTime @map("start_datetime")
+  endDatetime   DateTime @map("end_datetime")
+  scheduleTypeId String? @map("schedule_type_id")
+  scheduleType  ScheduleType? @relation(fields: [scheduleTypeId], references: [id], onDelete: SetNull)
+  color         String   @default("#1e3a5f")
+  location      String?
+  notes         String?  @db.Text
+  isLastMinute  Boolean  @default(false) @map("is_last_minute")
+  hoursPerDay   Float?   @default(8) @map("hours_per_day")
+  branchId      String?  @map("branch_id")
+  branch        Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId  String?  @map("department_id")
+  department    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  createdById   String   @map("created_by")
+  createdBy     User     @relation("ScheduleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  assignments ScheduleAssignment[]
+
+  // -- ÍNDICES --
+  // (startDatetime, endDatetime): rango de fechas — todas las queries de calendario lo usan
+  @@index([startDatetime, endDatetime])
+  // (branchId, startDatetime, endDatetime): CLAVE — overlap check + listado por sede + rango
+  // Es el índice más importante: ensureNoOverlaps y listSchedulesForActor lo explotan constantemente
+  @@index([branchId, startDatetime, endDatetime])
+  // scheduleTypeId: nuevo índice para tipos configurables
+  @@index([scheduleTypeId])
+  // isLastMinute: notificaciones y filtros de urgencia
+  @@index([isLastMinute])
+  // createdById: historial de guardias creadas por un usuario
+  @@index([createdById])
+  // departmentId: filtros por departamento en planning y asignación
+  @@index([departmentId])
+  @@map("schedules")
+}
+
+model ScheduleAssignment {
+  scheduleId String   @map("schedule_id")
+  userId     String   @map("user_id")
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@id([scheduleId, userId])
+  // -- ÍNDICES --
+  // userId: buscar todos los turnos asignados a un usuario (getUserSchedules, overlap check)
+  // La clave primaria (scheduleId, userId) ya cubre búsquedas por scheduleId.
+  // MySQL no indexa automáticamente la segunda columna de un PK compuesto para búsquedas inversas.
+  @@index([userId])
+  @@map("schedule_assignments")
+}
+
+model WeeklyWorkSummary {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year            Int
+  week            Int
+  totalHours      Float    @default(0) @map("total_hours")
+  baseHours       Float    @default(40) @map("base_hours")
+  overtimeHours   Float    @default(0) @map("overtime_hours")
+  dailyBreakdown  String?  @map("daily_breakdown") @db.Text
+  calculatedAt    DateTime @default(now()) @map("calculated_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, year, week])
+  @@index([userId, year, week])
+  @@index([year, week])
+  @@map("weekly_work_summaries")
+}
+
+model ScheduleType {
+  id        String   @id @default(cuid())
+  value     String   @unique
+  label     String
+  color     String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  schedules Schedule[]
+
+  // -- ÍNDICES --
+  // value: búsquedas por valor (validación, joins)
+  @@index([value])
+  // isActive: filtrar tipos activos
+  @@index([isActive])
+  @@map("schedule_types")
+}
+
+enum AbsenceType {
+  vacaciones
+  asuntos_propios
+  formacion
+  permiso_retribuido
+  cumpleanos
+  baja_medica
+  maternidad
+  paternidad
+  compensatorio
+  festivo
+}
+
+enum AbsenceStatus {
+  pending
+  colindante
+  approved
+  rejected
+  cancelled
+}
+
+model Absence {
+  id              String         @id @default(cuid())
+  employeeId      String         @map("employee_id")
+  employee        User           @relation("AbsenceEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  type            AbsenceType    @default(vacaciones)
+  status          AbsenceStatus  @default(pending)
+  startDate       DateTime       @map("start_date")
+  endDate         DateTime       @map("end_date")
+  note            String?        @db.Text
+  reviewedBy      String?        @map("reviewed_by")
+  reviewer        User?          @relation("AbsenceReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?      @map("reviewed_at")
+  rejectionReason String?        @map("rejection_reason") @db.Text
+  branchId        String         @map("branch_id")
+  branch          Branch         @relation("BranchAbsences", fields: [branchId], references: [id], onDelete: Restrict)
+  departmentId    String         @map("department_id")
+  department      Department     @relation("DepartmentAbsences", fields: [departmentId], references: [id], onDelete: Restrict)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([branchId, status])
+  @@index([departmentId, status])
+  @@index([startDate, endDate])
+  @@index([employeeId, status])
+  @@map("absences")
+}
+
+model WebhookConfig {
+  id                            String   @id @default(cuid())
+  name                          String
+  webhookUrl                    String   @map("webhook_url") @db.Text
+  enabled                       Boolean  @default(true)
+  notifyModifications           Boolean  @default(true) @map("notify_modifications")
+  notifyLastMinute              Boolean  @default(true) @map("notify_last_minute")
+  fridayReminderEnabled         Boolean  @default(true) @map("friday_reminder_enabled")
+  mondayAbsenceReminderEnabled Boolean  @default(true) @map("monday_absence_reminder_enabled")
+  fridayReminderTime            String   @default("12:00") @map("friday_reminder_time")
+  departmentId                  String?  @map("department_id")
+  department                    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  branchId                      String?  @map("branch_id")
+  branch                        Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdAt                     DateTime @default(now()) @map("created_at")
+  updatedAt                     DateTime @updatedAt @map("updated_at")
+
+  notificationLogs NotificationLog[]
+
+  // -- ÍNDICES --
+  // enabled: notifyScheduleChange y schedulers filtran siempre por enabled = true
+  @@index([enabled])
+  // (enabled, notifyModifications): filtro compuesto en notifyScheduleChange
+  @@index([enabled, notifyModifications])
+  // (enabled, notifyLastMinute): filtro compuesto para cambios de último momento
+  @@index([enabled, notifyLastMinute])
+  // (enabled, fridayReminderEnabled): scheduler del viernes
+  @@index([enabled, fridayReminderEnabled])
+  // (enabled, mondayAbsenceReminderEnabled): scheduler del lunes
+  @@index([enabled, mondayAbsenceReminderEnabled])
+  // Índices para las relaciones con departamento y sede
+  @@index([departmentId])
+  @@index([branchId])
+
+  @@map("webhook_configs")
+}
+
+model NotificationLog {
+  id              String         @id @default(cuid())
+  type            String
+  message         String
+  payload         String?        @db.Text
+  webhookConfigId String?        @map("webhook_config_id")
+  webhookConfig   WebhookConfig? @relation(fields: [webhookConfigId], references: [id], onDelete: SetNull)
+  sentAt          DateTime       @default(now()) @map("sent_at")
+  sentByUserId    String?        @map("sent_by_user_id")
+  sentBy          User?          @relation("NotificationSender", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  status          String         @default("pending")
+  errorMessage    String?        @map("error_message")
+  scheduleId      String?        @map("schedule_id")
+
+  // -- ÍNDICES --
+  // sentAt: listado paginado ordenado por fecha (el más usado)
+  @@index([sentAt])
+  // status: filtrar por estado (sent/failed/pending) — NotificationsPage lo usa
+  @@index([status])
+  // (status, sentAt): combinación para reenvíos fallidos ordenados cronológicamente
+  @@index([status, sentAt])
+  // type: filtrar por tipo de notificación
+  @@index([type])
+  // webhookConfigId: historial de un webhook concreto
+  @@index([webhookConfigId])
+  @@map("notification_logs")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?  @map("user_id")
+  user        User?    @relation("AuditActor", fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  detailsJson String?  @map("details_json") @db.Text
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  rolledBackAt       DateTime? @map("rolled_back_at")
+  rolledBackByUserId String?   @map("rolled_back_by_user_id")
+  rolledBackBy       User?     @relation("AuditRollbackActor", fields: [rolledBackByUserId], references: [id], onDelete: SetNull)
+
+  // -- ÍNDICES --
+  // createdAt: listado paginado ordenado cronológicamente
+  @@index([createdAt])
+  // updatedAt: para mover registros arriba al ser modificados (rollbacks)
+  @@index([updatedAt])
+  // userId: actividad de un usuario concreto
+  @@index([userId])
+  // action: filtrar por tipo de acción (LOGIN, UPDATE_USER, etc.) y la lógica reversible/irreversible
+  @@index([action])
+  // (entityType, entityId): buscar historial completo de una entidad — usado en rollback y detail view
+  @@index([entityType, entityId])
+  // (userId, createdAt): actividad de un usuario en orden cronológico (dashboard de actividad reciente)
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+model InAppNotification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String   @db.Text
+  readAt    DateTime? @map("read_at")
+  link      String?
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("in_app_notifications")
+}
+
+model ShiftPreset {
+  id        String   @id @default(cuid())
+  name      String
+  startTime String   @map("start_time")
+  endTime   String   @map("end_time")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("shift_presets")
+}
