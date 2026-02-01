@@ -1,0 +1,91 @@
+name: sincro
+
+services:
+  db:
+    image: mariadb:10.11
+    container_name: sincro-db
+    restart: unless-stopped
+    networks:
+      - sincro-network
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sincro_db}
+      MYSQL_ROOT_HOST: "%"
+    ports:
+      - "${HOST_PORT_DB:-13306}:3306"
+    volumes:
+      # Persistencia de datos de MariaDB en directorio local
+      - ./data/mysql:/var/lib/mysql
+    command: ["--innodb-use-native-aio=0"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p${MYSQL_ROOT_PASSWORD:-root_pass} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sincro-backend
+    restart: unless-stopped
+    networks:
+      - sincro-network
+    environment:
+      - DATABASE_URL=mysql://root:${MYSQL_ROOT_PASSWORD:-root_pass}@db:3306/${MYSQL_DATABASE:-sincro_db}
+      - PORT=${HOST_PORT_API:-13001}
+      - NODE_ENV=${NODE_ENV:-development}
+      - CORS_ORIGIN=http://localhost:${HOST_PORT_FRONTEND:-15173}
+      - CHOKIDAR_USEPOLLING=true
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+      # Persistencia de logs del backend
+      - ./data/logs/backend:/app/logs
+    ports:
+      - "${HOST_PORT_API:-13001}:${HOST_PORT_API:-13001}"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+          sh /app/docker-entrypoint.sh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${HOST_PORT_API:-13001}/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sincro-frontend
+    restart: unless-stopped
+    networks:
+      - sincro-network
+    init: true
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port ${HOST_PORT_FRONTEND:-15173}
+    ports:
+      - "${HOST_PORT_FRONTEND:-15173}:${HOST_PORT_FRONTEND:-15173}"
+
+volumes:
+  backend_node_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+
+networks:
+  sincro-network:
+    driver: bridge
