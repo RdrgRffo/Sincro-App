@@ -31,7 +31,7 @@
     "test": "node --localstorage-file=.node-localstorage ./node_modules/jest/bin/jest.js --runInBand",
     "test:watch": "node --localstorage-file=.node-localstorage ./node_modules/jest/bin/jest.js --watch --runInBand",
     "test:coverage": "node --localstorage-file=.node-localstorage ./node_modules/jest/bin/jest.js --coverage --runInBand",
-    "test:api:ci": "npx newman run test/Sincro.API.Deployment.postman_collection.json -e test/Sincro.local.postman_environment.json --reporters cli,junit --reporter-junit-export test/reports/newman-junit.xml --bail"
+    "test:api:ci": "npx newman run test/Sincro.API.Deployment.postman_collection.json -e test/Sincro.local.postman_environment.json --env-var \"baseUrl=http://localhost:13001\" --reporters cli,junit --reporter-junit-export test/reports/newman-junit.xml --bail"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
