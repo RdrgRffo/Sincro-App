@@ -1,0 +1,60 @@
+{
+  "info": {
+    "name": "Sincro - Auth",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:13001", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Login (Captura Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+              "",
+              "const response = pm.response.json();",
+              "if (response && response.success && response.data && response.data.accessToken) {",
+              "    pm.environment.set(\"accessToken\", response.data.accessToken);",
+              "    pm.test(\"El token JWT existe\", () => { pm.expect(response.data.accessToken).to.be.a(\"string\"); });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"AdminPass123!\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "Login Fallido (Lockout Boundary)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status debe ser 401 Unauthorized\", () => { pm.response.to.have.status(401); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"ClaveMala123!\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    }
+  ]
+}

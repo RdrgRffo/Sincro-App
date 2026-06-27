@@ -1,0 +1,180 @@
+{
+  "info": {
+    "name": "Sincro - Schedules",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:13001", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [ { "key": "token", "value": "{{accessToken}}", "type": "string" } ]
+  },
+  "item": [
+    {
+      "name": "0. Login (Captura Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+              "",
+              "const response = pm.response.json();",
+              "if (response && response.success && response.data && response.data.accessToken) {",
+              "    pm.environment.set(\"accessToken\", response.data.accessToken);",
+              "    pm.collectionVariables.set(\"accessToken\", response.data.accessToken);",
+              "    pm.test(\"El token JWT existe\", () => { pm.expect(response.data.accessToken).to.be.a(\"string\"); });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"AdminPass123!\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Crear Guardia Base",
+    {
+      "name": "Crear Guardia Base",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const now = new Date();",
+              "const ts = now.getTime();",
+              "// Usar el timestamp como offset Ãºnico para evitar colisiones con ejecuciones anteriores",
+              "const startDate = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000 + (ts % 100000));",
+              "const endDate = new Date(startDate.getTime() + 4 * 60 * 60 * 1000);",
+              "",
+              "// Guardar fechas en environment para usarlas despuÃ©s",
+              "pm.environment.set('test_start_date', startDate.toISOString());",
+              "pm.environment.set('test_end_date', endDate.toISOString());",
+              "pm.environment.set('test_title', 'Guardia de prueba ' + ts);",
+              "",
+              "// Preparar el body del request principal",
+              "const body = {",
+              "  title: 'Guardia de prueba ' + ts,",
+              "  assigneeIds: [pm.environment.get('user_id')],",
+              "  scheduleTypeId: pm.environment.get('schedule_type_id'),",
+              "  startDatetime: startDate.toISOString(),",
+              "  endDatetime: endDate.toISOString(),",
+              "  branchId: pm.environment.get('branch_id')",
+              "};",
+              "pm.request.body.update(JSON.stringify(body));"
+
+            ],
+            "type": "text/javascript"
+          }
+        },
+
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 201\", () => { pm.response.to.have.status(201); });",
+              "const response = pm.response.json();",
+              "if (response.success) {",
+              "  pm.environment.set(\"temp_schedule_id\", response.data.id);",
+              "  pm.environment.set(\"temp_start_date\", response.data.startDatetime);",
+              "  pm.environment.set(\"temp_end_date\", response.data.endDatetime);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-csrf-token", "value": "{{csrf_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/schedules", "host": ["{{baseUrl}}"], "path": ["api", "schedules"] }
+      }
+    },
+    {
+      "name": "Crear Guardia (Solapamiento intencional)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const startDate = new Date(pm.environment.get('temp_start_date'));",
+              "const midDate = new Date(startDate.getTime() + 1 * 60 * 60 * 1000);",
+              "const endDate = new Date(startDate.getTime() + 3 * 60 * 60 * 1000);",
+              "const body = {",
+              "  title: 'Guardia de prueba (solapamiento)',",
+              "  assigneeIds: [pm.environment.get('user_id')],",
+              "  scheduleTypeId: pm.environment.get('schedule_type_id'),",
+              "  startDatetime: midDate.toISOString(),",
+              "  endDatetime: endDate.toISOString(),",
+              "  branchId: pm.environment.get('branch_id')",
+              "};",
+              "pm.request.body.update(JSON.stringify(body));"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [ 
+              "pm.test(\"Falla por solapamiento (400 o 409)\", () => { ", 
+              "  pm.expect(pm.response.code).to.be.oneOf([400, 409]);",
+              "});" 
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-csrf-token", "value": "{{csrf_token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/schedules", "host": ["{{baseUrl}}"], "path": ["api", "schedules"] }
+      }
+    },
+    {
+      "name": "Limpiar Guardia Base",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [ "pm.test(\"Status code is 200 o 404 (ya eliminado)\", () => { pm.expect(pm.response.code).to.be.oneOf([200, 404]); });" ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "x-csrf-token", "value": "{{csrf_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\"reason\": \"Limpieza de test postman\"}", "options": {"raw": {"language": "json"}} },
+        "url": { "raw": "{{baseUrl}}/api/schedules/{{temp_schedule_id}}", "host": ["{{baseUrl}}"], "path": ["api", "schedules", "{{temp_schedule_id}}"] }
+      }
+    }
+  ]
+}

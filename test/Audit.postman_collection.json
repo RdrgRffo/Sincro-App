@@ -1,0 +1,104 @@
+{
+  "info": {
+    "name": "Sincro - Audit",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:13001", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [ { "key": "token", "value": "{{accessToken}}", "type": "string" } ]
+  },
+  "item": [
+    {
+      "name": "0. Login (Captura Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+              "",
+              "const response = pm.response.json();",
+              "if (response && response.success && response.data && response.data.accessToken) {",
+              "    pm.environment.set(\"accessToken\", response.data.accessToken);",
+              "    pm.collectionVariables.set(\"accessToken\", response.data.accessToken);",
+              "    pm.test(\"El token JWT existe\", () => { pm.expect(response.data.accessToken).to.be.a(\"string\"); });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"AdminPass123!\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Listar Auditoría (Buscar log de USER para rollback)",
+    {
+      "name": "Listar Auditoría (Buscar log de USER para rollback)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+              "const response = pm.response.json();",
+              "if (response && response.success && response.data && response.data.length > 0) {",
+              "    // Buscar un log de USER (no SCHEDULE) para hacer rollback,",
+              "    // para no interferir con los tests de Schedules",
+              "    const userLog = response.data.find(log => log.entityType === 'User');",
+              "    if (userLog) {",
+              "        pm.environment.set(\"audit_id\", userLog.id);",
+              "    } else {",
+              "        // Fallback: usar el primer log que no sea de Schedule",
+              "        const nonScheduleLog = response.data.find(log => log.entityType !== 'Schedule');",
+              "        if (nonScheduleLog) {",
+              "            pm.environment.set(\"audit_id\", nonScheduleLog.id);",
+              "        } else {",
+              "            pm.environment.set(\"audit_id\", response.data[0].id);",
+              "        }",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/audit?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["api", "audit"], "query": [ { "key": "page", "value": "1" }, { "key": "limit", "value": "10" } ] }
+      }
+    },
+    {
+      "name": "Revertir Acción (Rollback)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [ "pm.test(\"Audit responde con consistencia\", () => { pm.response.to.not.be.serverError; });" ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "x-csrf-token", "value": "{{csrf_token}}" }
+        ],
+        "url": { "raw": "{{baseUrl}}/api/audit/{{audit_id}}/rollback", "host": ["{{baseUrl}}"], "path": ["api", "audit", "{{audit_id}}", "rollback"] }
+      }
+    }
+  ]
+}

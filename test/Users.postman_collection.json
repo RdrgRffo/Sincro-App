@@ -1,0 +1,97 @@
+{
+  "info": {
+    "name": "Sincro - Users",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:13001", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [ { "key": "token", "value": "{{accessToken}}", "type": "string" } ]
+  },
+  "item": [
+    {
+      "name": "0. Login (Captura Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+              "",
+              "const response = pm.response.json();",
+              "if (response && response.success && response.data && response.data.accessToken) {",
+              "    pm.environment.set(\"accessToken\", response.data.accessToken);",
+              "    pm.collectionVariables.set(\"accessToken\", response.data.accessToken);",
+              "    pm.test(\"El token JWT existe\", () => { pm.expect(response.data.accessToken).to.be.a(\"string\"); });",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"AdminPass123!\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+      }
+    },
+    {
+      "name": "1. Listar Usuarios",
+    {
+      "name": "Listar Usuarios",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+              "const response = pm.response.json();",
+              "if (response && response.success && response.data && response.data.length > 0) {",
+              "    // Buscamos el primer usuario que no sea el admin actual para evitar el 403",
+              "    const targetUser = response.data.find(u => u.email !== 'admin@sincro.local') || response.data[0];",
+              "    pm.environment.set(\"user_id\", targetUser.id);",
+              "    console.log('Target User ID for testing:', targetUser.id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/api/users?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["api", "users"], "query": [ { "key": "page", "value": "1" }, { "key": "limit", "value": "10" } ] }
+      }
+    },
+    {
+      "name": "Resetear Clave Inválida (< 8 chars)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [ "pm.test(\"Status code es 400 o 429 (Bad Request / Rate Limit)\", () => { pm.expect(pm.response.code).to.be.oneOf([400, 429]); });" ],
+            "type": "text/javascript"
+          }
+
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-csrf-token", "value": "{{csrf_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"newPassword\": \"corta1!\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/users/{{user_id}}/reset-password", "host": ["{{baseUrl}}"], "path": ["api", "users", "{{user_id}}", "reset-password"] }
+      }
+    }
+  ]
+}

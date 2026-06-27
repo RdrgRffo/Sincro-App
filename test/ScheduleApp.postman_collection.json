@@ -1,0 +1,184 @@
+{
+  "info": {
+    "name": "Sincro API E2E",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:13001", "type": "string" }
+  ],
+    { "key": "accessToken", "value": "", "type": "string" }
+  ],
+  "auth": {
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Auth & Lockouts",
+      "item": [
+        {
+          "name": "Login (Captura Token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });",
+                  "let jsonData = pm.response.json();",
+                  "pm.environment.set(\"accessToken\", jsonData.data.accessToken);",
+                  "pm.collectionVariables.set(\"accessToken\", jsonData.data.accessToken);",
+                  "pm.test(\"El token JWT existe\", () => { pm.expect(jsonData.data.accessToken).to.be.a(\"string\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"AdminPass123!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        },
+        {
+          "name": "Login Fallido (Lockout Boundary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status debe ser 401 Unauthorized\", () => { pm.response.to.have.status(401); });",
+                  "pm.test(\"Debe advertir error de credenciales\", () => {",
+                  "  let data = pm.response.json();",
+                  "  pm.expect(data.error).to.include(\"Credenciales incorrectas\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"admin@sincro.local\",\n  \"password\": \"WrongPass123!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Users (Manejo de Anomalías)",
+      "item": [
+        {
+          "name": "Listar Usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", () => { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/users?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["api", "users"], "query": [ { "key": "page", "value": "1" }, { "key": "limit", "value": "10" } ] }
+          }
+        },
+        {
+          "name": "Resetear Clave Inválida (< 8 chars)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code es 400 (Bad Request)\", () => { pm.response.to.have.status(400); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"corta1!\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/users/<userID>/reset-password", "host": ["{{baseUrl}}"], "path": ["api", "users", "<userID>", "reset-password"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Schedules (Evaluador de Overlaps)",
+      "item": [
+        {
+          "name": "Crear Guardia (Solapamiento intencional)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Falla intencional (Overlap 400/409)\", () => { pm.response.to.be.clientError; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"a-definir\",\n  \"shiftType\": \"PRIMARY\",\n  \"startTime\": \"2026-04-18T10:00:00Z\",\n  \"endTime\": \"2026-04-18T14:00:00Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/schedules", "host": ["{{baseUrl}}"], "path": ["api", "schedules"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Audit & Rollback",
+      "item": [
+        {
+          "name": "Revertir Acción (Rollback)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Endpoint de Audit responde con consistencia\", () => { pm.response.to.not.be.serverError; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/audit/<auditID>/rollback", "host": ["{{baseUrl}}"], "path": ["api", "audit", "<auditID>", "rollback"] }
+          }
+        }
+      ]
+    }
+  ]
+}
