@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "types": ["vitest/globals", "@testing-library/jest-dom", "node"],
+    "jsx": "react-jsx",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["../../src/**/*", "./**/*"]
+}
