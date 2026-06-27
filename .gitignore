@@ -55,9 +55,19 @@ schedule-app-doc/
 coverage/
 *.lcov
 
-# Test reports (Newman / Postman)
+# Test reports (Newman / Postman) - generated output
 backend/test/reports/
 test/reports/
+
+# Generated Postman environment snapshots (contain tokens)
+test/postman-environment-*.json
+test/token-response.json
+test/postman-environment.json
+
+# Generated Postman environment snapshots (contain tokens)
+test/postman-environment-*.json
+test/token-response.json
+test/postman-environment.json
 
 # Ignore analysis / export docs
 portBackend.md
@@ -74,11 +84,7 @@ generate-commits.ps1
 
 # Local dev scripts (not part of the project)
 find_free_ports.ps1
-start.ps1
-rebase-commits.ps1
-
-# Test collections (Postman/Newman) - not part of source
-test/
+find_free_ports.sh
 
 # Docker volumes / local data
 data/
