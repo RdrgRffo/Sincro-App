@@ -14,13 +14,12 @@
       "key": "token",
       "value": "",
       "type": "string"
-    }
+    },
     {
       "key": "accessToken",
       "value": "",
       "type": "string"
-    },
-
+    }
   ],
   "auth": {
     "type": "bearer",

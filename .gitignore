@@ -34,7 +34,7 @@ Thumbs.db
 .idea/
 
 # Root package-lock (generated, not needed)
-package-lock.json
+/package-lock.json
 
 # Misc
 npm-debug.log*
@@ -76,7 +76,7 @@ TODO.md
 COMMITS_PORTADO.md
 
 # Documentation files (business, case studies, etc.)
-docs/
+/docs/
 
 # Commit generation scripts (not part of the project)
 generate-commits.sh
